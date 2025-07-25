@@ -18,3 +18,4 @@ xbrl-us==0.0.1
 feedparser==6.0.10
 python-dateutil==2.8.2
 pytz==2023.3
+fyers_apiv3

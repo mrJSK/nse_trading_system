@@ -10,10 +10,16 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from pathlib import Path
+import sys
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+# Build paths inside the project
+
+# ✅ ADD THIS: Add apps directory to Python path
+sys.path.insert(0, os.path.join(BASE_DIR, 'apps'))
 
 
 # Quick-start development settings - unsuitable for production
@@ -40,6 +46,7 @@ INSTALLED_APPS = [
     # Third party apps
     'rest_framework',
     'corsheaders',
+    'celery',
     
     # Local apps
     'apps.market_data_service',
@@ -48,6 +55,7 @@ INSTALLED_APPS = [
     'apps.trading_engine',
     'apps.event_monitoring',
     'apps.dashboard',
+    'apps.portfolio',
 ]
 
 MIDDLEWARE = [
