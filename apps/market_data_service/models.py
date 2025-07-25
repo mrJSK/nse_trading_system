@@ -1,10 +1,11 @@
 # apps/market_data_service/models.py
 from django.db import models
-from django.contrib.postgres.fields import JSONField
+from django.db.models import JSONField  # ✅ Fixed: Use built-in JSONField instead
 from django.core.validators import MinValueValidator, MaxValueValidator
 from decimal import Decimal
 from typing import Dict, Any, Optional
 from django.utils import timezone
+
 
 class Company(models.Model):
     """Single responsibility: Store basic company information only"""
@@ -22,7 +23,7 @@ class Company(models.Model):
         null=True, blank=True
     )
     
-    # ✅ NEW: Trading-specific fields
+    # ✅ Trading-specific fields
     is_active = models.BooleanField(default=True)
     is_tradeable = models.BooleanField(default=True)  # Can we trade this stock?
     fyers_symbol = models.CharField(max_length=50, null=True, blank=True)  # Cached Fyers symbol
@@ -37,13 +38,13 @@ class Company(models.Model):
         default='medium'
     )
     
-    # ✅ NEW: Performance tracking
+    # ✅ Performance tracking
     successful_trades = models.IntegerField(default=0)
     total_trades = models.IntegerField(default=0)
     average_return = models.DecimalField(max_digits=5, decimal_places=2, null=True)
     win_rate = models.DecimalField(max_digits=5, decimal_places=2, null=True)  # Success percentage
     
-    # ✅ NEW: Scraping optimization
+    # ✅ Scraping optimization
     last_scraped = models.DateTimeField(null=True, blank=True)
     scraping_frequency = models.CharField(
         max_length=20,
@@ -128,6 +129,7 @@ class Company(models.Model):
     def __str__(self):
         return f"{self.symbol} - {self.name}"
 
+
 class IndustryClassification(models.Model):
     """Single responsibility: Industry hierarchy management"""
     name = models.CharField(max_length=200, unique=True)
@@ -149,6 +151,7 @@ class IndustryClassification(models.Model):
     
     def __str__(self):
         return self.name
+
 
 class ValuationMetrics(models.Model):
     """Single responsibility: Store valuation-related metrics"""
@@ -176,7 +179,7 @@ class ValuationMetrics(models.Model):
     price_to_sales = models.DecimalField(max_digits=10, decimal_places=2, null=True)
     price_to_earnings_growth = models.DecimalField(max_digits=10, decimal_places=2, null=True)  # PEG ratio
     
-    # ✅ NEW: Market sentiment indicators
+    # ✅ Market sentiment indicators
     beta = models.DecimalField(max_digits=5, decimal_places=2, null=True)
     volatility_30d = models.DecimalField(max_digits=5, decimal_places=2, null=True)
     relative_strength = models.DecimalField(max_digits=5, decimal_places=2, null=True)
@@ -191,6 +194,7 @@ class ValuationMetrics(models.Model):
             models.Index(fields=['stock_pe']),
             models.Index(fields=['updated_at']),
         ]
+
 
 class ProfitabilityMetrics(models.Model):
     """Single responsibility: Store profitability metrics"""
@@ -212,7 +216,7 @@ class ProfitabilityMetrics(models.Model):
     gross_margin = models.DecimalField(max_digits=5, decimal_places=2, null=True)
     ebitda_margin = models.DecimalField(max_digits=5, decimal_places=2, null=True)
     
-    # ✅ NEW: Additional profitability metrics
+    # ✅ Additional profitability metrics
     asset_turnover = models.DecimalField(max_digits=5, decimal_places=2, null=True)
     inventory_turnover = models.DecimalField(max_digits=5, decimal_places=2, null=True)
     receivables_turnover = models.DecimalField(max_digits=5, decimal_places=2, null=True)
@@ -227,6 +231,7 @@ class ProfitabilityMetrics(models.Model):
             models.Index(fields=['roce']),
             models.Index(fields=['net_profit_margin']),
         ]
+
 
 class FinancialStatement(models.Model):
     """Single responsibility: Store financial statement data"""
@@ -254,15 +259,13 @@ class FinancialStatement(models.Model):
     year = models.IntegerField(null=True, blank=True)
     quarter = models.CharField(max_length=10, null=True, blank=True)
     
-    # Raw data storage
+    # ✅ Fixed JSONField imports
     raw_data = JSONField(default=dict)
-    
-    # Processed metrics
     processed_metrics = JSONField(default=dict)
-    
-    # ✅ NEW: Quality and validation
-    data_quality_score = models.DecimalField(max_digits=3, decimal_places=2, default=0.0)  # 0-1
     validation_errors = JSONField(default=list)
+    
+    # ✅ Quality and validation
+    data_quality_score = models.DecimalField(max_digits=3, decimal_places=2, default=0.0)  # 0-1
     is_validated = models.BooleanField(default=False)
     
     # Metadata
@@ -282,6 +285,7 @@ class FinancialStatement(models.Model):
             models.Index(fields=['data_quality_score']),
             models.Index(fields=['is_validated']),
         ]
+
 
 class GrowthMetrics(models.Model):
     """Single responsibility: Store growth-related data"""
@@ -311,16 +315,16 @@ class GrowthMetrics(models.Model):
     stock_cagr_3y = models.DecimalField(max_digits=8, decimal_places=2, null=True)
     stock_cagr_1y = models.DecimalField(max_digits=8, decimal_places=2, null=True)
     
-    # ✅ NEW: Additional growth metrics
+    # ✅ Additional growth metrics
     book_value_growth_5y = models.DecimalField(max_digits=8, decimal_places=2, null=True)
     dividend_growth_5y = models.DecimalField(max_digits=8, decimal_places=2, null=True)
     eps_growth_5y = models.DecimalField(max_digits=8, decimal_places=2, null=True)
     
-    # Quarterly growth rates
+    # ✅ Fixed JSONField imports
     quarterly_revenue_growth = JSONField(default=dict)  # {"Q1FY24": 15.2, "Q2FY24": 12.5}
     quarterly_profit_growth = JSONField(default=dict)
     
-    # ✅ NEW: Growth consistency metrics
+    # ✅ Growth consistency metrics
     revenue_growth_consistency = models.DecimalField(max_digits=5, decimal_places=2, null=True)  # 0-100
     profit_growth_consistency = models.DecimalField(max_digits=5, decimal_places=2, null=True)  # 0-100
     
@@ -335,6 +339,7 @@ class GrowthMetrics(models.Model):
             models.Index(fields=['revenue_growth_consistency']),
         ]
 
+
 class QualitativeAnalysis(models.Model):
     """Single responsibility: Store qualitative analysis data"""
     company = models.OneToOneField(
@@ -342,6 +347,8 @@ class QualitativeAnalysis(models.Model):
         on_delete=models.CASCADE, 
         related_name='qualitative_analysis'
     )
+    
+    # ✅ Fixed JSONField imports
     pros = JSONField(default=list)
     cons = JSONField(default=list)
     
@@ -350,7 +357,7 @@ class QualitativeAnalysis(models.Model):
     business_model_score = models.DecimalField(max_digits=3, decimal_places=1, null=True)
     competitive_advantage_score = models.DecimalField(max_digits=3, decimal_places=1, null=True)
     
-    # ✅ NEW: ESG and governance metrics
+    # ✅ ESG and governance metrics
     esg_score = models.DecimalField(max_digits=3, decimal_places=1, null=True)
     governance_score = models.DecimalField(max_digits=3, decimal_places=1, null=True)
     sustainability_score = models.DecimalField(max_digits=3, decimal_places=1, null=True)
@@ -360,6 +367,7 @@ class QualitativeAnalysis(models.Model):
     
     class Meta:
         db_table = 'qualitative_analysis'
+
 
 class ShareholdingPattern(models.Model):
     """Single responsibility: Store shareholding data"""
@@ -372,13 +380,13 @@ class ShareholdingPattern(models.Model):
     public_holding = models.DecimalField(max_digits=5, decimal_places=2, null=True)
     institutional_holding = models.DecimalField(max_digits=5, decimal_places=2, null=True)
     
-    # ✅ NEW: Detailed shareholding breakdown
+    # ✅ Detailed shareholding breakdown
     fii_holding = models.DecimalField(max_digits=5, decimal_places=2, null=True)
     dii_holding = models.DecimalField(max_digits=5, decimal_places=2, null=True)
     mutual_fund_holding = models.DecimalField(max_digits=5, decimal_places=2, null=True)
     retail_holding = models.DecimalField(max_digits=5, decimal_places=2, null=True)
     
-    # Raw shareholding data
+    # ✅ Fixed JSONField import
     raw_data = JSONField(default=dict)
     
     data_source = models.CharField(max_length=20, default='screener')
@@ -392,6 +400,7 @@ class ShareholdingPattern(models.Model):
             models.Index(fields=['promoter_holding']),
             models.Index(fields=['institutional_holding']),
         ]
+
 
 class CorporateEvent(models.Model):
     """✅ ENHANCED: Store corporate events and announcements"""
@@ -428,7 +437,7 @@ class CorporateEvent(models.Model):
     impact_level = models.CharField(max_length=10, choices=IMPACT_LEVELS, default='LOW')
     expected_price_impact = models.DecimalField(max_digits=5, decimal_places=2, null=True)
     
-    # ✅ NEW: Trading integration fields
+    # ✅ Trading integration fields
     signal_generated = models.BooleanField(default=False)  # Has this event generated a signal?
     signal_action = models.CharField(
         max_length=10, 
@@ -439,7 +448,7 @@ class CorporateEvent(models.Model):
     price_after_event = models.DecimalField(max_digits=10, decimal_places=2, null=True)
     actual_price_impact = models.DecimalField(max_digits=5, decimal_places=2, null=True)
     
-    # ✅ NEW: Event outcome tracking
+    # ✅ Event outcome tracking
     event_outcome = models.CharField(
         max_length=20,
         choices=[
@@ -452,7 +461,7 @@ class CorporateEvent(models.Model):
     )
     outcome_confidence = models.DecimalField(max_digits=3, decimal_places=2, null=True)  # 0-1
     
-    # Additional data
+    # ✅ Fixed JSONField import
     event_data = JSONField(default=dict)  # Store event-specific data
     
     # Data source tracking
@@ -478,6 +487,7 @@ class CorporateEvent(models.Model):
             models.Index(fields=['event_outcome']),
         ]
 
+
 class FundamentalScore(models.Model):
     """Single responsibility: Store computed fundamental scores"""
     company = models.OneToOneField(
@@ -493,7 +503,7 @@ class FundamentalScore(models.Model):
     financial_health_score = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     qualitative_score = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     
-    # ✅ NEW: Additional scoring dimensions
+    # ✅ Additional scoring dimensions
     momentum_score = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     quality_score = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     dividend_score = models.DecimalField(max_digits=5, decimal_places=2, default=0)
@@ -501,7 +511,7 @@ class FundamentalScore(models.Model):
     # Overall composite score (0-100)
     overall_score = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     
-    # ✅ NEW: Score trends
+    # ✅ Score trends
     score_trend_30d = models.CharField(
         max_length=10,
         choices=[('UP', 'Improving'), ('DOWN', 'Declining'), ('STABLE', 'Stable')],
@@ -515,7 +525,7 @@ class FundamentalScore(models.Model):
     data_freshness_days = models.IntegerField(default=0)  # How old is the underlying data
     confidence_level = models.DecimalField(max_digits=3, decimal_places=2, default=0)  # 0-1
     
-    # Score breakdown for transparency
+    # ✅ Fixed JSONField import
     score_breakdown = JSONField(default=dict)
     
     class Meta:
@@ -527,7 +537,7 @@ class FundamentalScore(models.Model):
             models.Index(fields=['confidence_level']),
         ]
 
-# ✅ NEW MODEL: Trading Signal Storage
+
 class TradingSignal(models.Model):
     """Store generated trading signals for tracking and analysis"""
     
@@ -580,7 +590,7 @@ class TradingSignal(models.Model):
     position_size_pct = models.DecimalField(max_digits=5, decimal_places=2, null=True)  # Recommended %
     max_loss_pct = models.DecimalField(max_digits=5, decimal_places=2, null=True)  # Max acceptable loss %
     
-    # Signal metadata
+    # ✅ Fixed JSONField imports
     data_sources = JSONField(default=list)  # ['fundamental', 'technical', 'event']
     signal_reasons = JSONField(default=list)
     component_signals = JSONField(default=dict)  # Breakdown of contributing signals
@@ -661,7 +671,7 @@ class TradingSignal(models.Model):
                 self.holding_period_days = (self.close_date - self.execution_date).days
             self.save()
 
-# ✅ NEW MODEL: Market Data Cache
+
 class MarketDataCache(models.Model):
     """Cache market data for performance optimization"""
     
@@ -677,7 +687,7 @@ class MarketDataCache(models.Model):
     )
     timeframe = models.CharField(max_length=10, default='D')  # D, H, 5M, etc.
     
-    # Cached data
+    # ✅ Fixed JSONField import
     data = JSONField(default=dict)
     data_quality = models.DecimalField(max_digits=3, decimal_places=2, default=1.0)
     
@@ -697,7 +707,7 @@ class MarketDataCache(models.Model):
             models.Index(fields=['expires_at']),
         ]
 
-# ✅ NEW MODEL: System Performance Metrics
+
 class SystemPerformanceMetrics(models.Model):
     """Track system performance and health metrics"""
     
@@ -716,7 +726,7 @@ class SystemPerformanceMetrics(models.Model):
     metric_value = models.DecimalField(max_digits=10, decimal_places=4)
     metric_unit = models.CharField(max_length=20, null=True, blank=True)  # %, ms, count, etc.
     
-    # Context data
+    # ✅ Fixed JSONField import
     context_data = JSONField(default=dict)
     
     # Aggregation period
@@ -733,7 +743,7 @@ class SystemPerformanceMetrics(models.Model):
             models.Index(fields=['created_at']),
         ]
 
-# ✅ NEW MODEL: Watchlist Management
+
 class Watchlist(models.Model):
     """Manage custom watchlists for focused analysis"""
     
@@ -745,7 +755,7 @@ class Watchlist(models.Model):
     auto_update = models.BooleanField(default=True)
     priority = models.IntegerField(default=50)  # 0-100
     
-    # Filtering criteria
+    # ✅ Fixed JSONField import
     filter_criteria = JSONField(default=dict)  # Dynamic filtering rules
     
     created_at = models.DateTimeField(auto_now_add=True)
@@ -753,6 +763,7 @@ class Watchlist(models.Model):
     
     class Meta:
         db_table = 'watchlists'
+
 
 class WatchlistItem(models.Model):
     """Individual items in watchlists"""
@@ -764,7 +775,7 @@ class WatchlistItem(models.Model):
     weight = models.DecimalField(max_digits=5, decimal_places=2, default=1.0)
     notes = models.TextField(blank=True)
     
-    # Auto-removal criteria
+    # ✅ Fixed JSONField import
     auto_remove_criteria = JSONField(default=dict)
     
     added_at = models.DateTimeField(auto_now_add=True)

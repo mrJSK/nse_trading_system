@@ -1,4 +1,18 @@
 # .gitignore
+# .dockerignore
+.git
+.gitignore
+.dockerignore
+Dockerfile
+README.md
+.env
+.env.local
+secrets/
+*.log
+__pycache__
+.pytest_cache
+.coverage
+
 
 # Python
 __pycache__/

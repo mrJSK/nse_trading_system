@@ -1,0 +1,122 @@
+version: "3.8"
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:16.1-alpine # ✅ Use specific, secure version
+    environment:
+      POSTGRES_DB: nse_trading_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password # ✅ Use secrets
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432" # ✅ Bind to localhost only
+    secrets:
+      - db_password
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true # ✅ Security option
+
+  # Redis for Celery
+  redis:
+    image: redis:7.2.4-alpine # ✅ Use specific, secure version
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --requirepass "$REDIS_PASSWORD"
+    environment:
+      - REDIS_PASSWORD_FILE=/run/secrets/redis_password
+    secrets:
+      - redis_password
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  # Django Web Application
+  web:
+    build:
+      context: .
+      target: production # ✅ Use production stage
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    ports:
+      - "127.0.0.1:8000:8000" # ✅ Bind to localhost
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DEBUG=False
+      - ALLOWED_HOSTS=localhost,127.0.0.1
+    secrets:
+      - db_password
+      - redis_password
+      - fyers_api_key
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true # ✅ Read-only filesystem
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=512m
+
+  # Celery Worker
+  celery-worker:
+    build:
+      context: .
+      target: production
+    command: celery -A config worker -l info --concurrency=4
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - db
+      - redis
+    secrets:
+      - db_password
+      - redis_password
+      - fyers_api_key
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  # Celery Beat Scheduler
+  celery-beat:
+    build:
+      context: .
+      target: production
+    command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - db
+      - redis
+    secrets:
+      - db_password
+      - redis_password
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+# ✅ Use Docker secrets for sensitive data
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+  redis_password:
+    file: ./secrets/redis_password.txt
+  fyers_api_key:
+    file: ./secrets/fyers_api_key.txt
+
+volumes:
+  postgres_data:
+  redis_data:
+
+# ✅ Use custom network
+networks:
+  default:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
