@@ -1,122 +1,144 @@
+# docker-compose.yml
 version: "3.8"
 
 services:
   # PostgreSQL Database
   db:
-    image: postgres:16.1-alpine # ✅ Use specific, secure version
+    image: postgres:15-alpine
     environment:
       POSTGRES_DB: nse_trading_db
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD_FILE: /run/secrets/db_password # ✅ Use secrets
+      POSTGRES_PASSWORD: postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:5432:5432" # ✅ Bind to localhost only
-    secrets:
-      - db_password
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true # ✅ Security option
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # Redis for Celery
   redis:
-    image: redis:7.2.4-alpine # ✅ Use specific, secure version
+    image: redis:7-alpine
     ports:
-      - "127.0.0.1:6379:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes --requirepass "$REDIS_PASSWORD"
-    environment:
-      - REDIS_PASSWORD_FILE=/run/secrets/redis_password
-    secrets:
-      - redis_password
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   # Django Web Application
   web:
-    build:
-      context: .
-      target: production # ✅ Use production stage
+    build: .
+    command: python manage.py runserver 0.0.0.0:8000
     volumes:
-      - ./data:/app/data
+      - .:/app
       - ./logs:/app/logs
     ports:
-      - "127.0.0.1:8000:8000" # ✅ Bind to localhost
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/nse_trading_db
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery Worker - Data Collection
+  celery-data:
+    build: .
+    command: celery -A config worker -Q data_collection -l info --concurrency=2
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
     depends_on:
       - db
       - redis
     environment:
-      - DEBUG=False
-      - ALLOWED_HOSTS=localhost,127.0.0.1
-    secrets:
-      - db_password
-      - redis_password
-      - fyers_api_key
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    read_only: true # ✅ Read-only filesystem
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=512m
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/nse_trading_db
+      - CELERY_BROKER_URL=redis://redis:6379/0
 
-  # Celery Worker
-  celery-worker:
-    build:
-      context: .
-      target: production
-    command: celery -A config worker -l info --concurrency=4
+  # Celery Worker - Analysis
+  celery-analysis:
+    build: .
+    command: celery -A config worker -Q analysis -l info --concurrency=2
     volumes:
-      - ./data:/app/data
+      - .:/app
       - ./logs:/app/logs
     depends_on:
       - db
       - redis
-    secrets:
-      - db_password
-      - redis_password
-      - fyers_api_key
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/nse_trading_db
+      - CELERY_BROKER_URL=redis://redis:6379/0
+
+  # Celery Worker - Trading
+  celery-trading:
+    build: .
+    command: celery -A config worker -Q trading -l info --concurrency=1
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/nse_trading_db
+      - CELERY_BROKER_URL=redis://redis:6379/0
+
+  # Celery Worker - Events
+  celery-events:
+    build: .
+    command: celery -A config worker -Q events -l info --concurrency=1
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/nse_trading_db
+      - CELERY_BROKER_URL=redis://redis:6379/0
 
   # Celery Beat Scheduler
   celery-beat:
-    build:
-      context: .
-      target: production
+    build: .
     command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     volumes:
-      - ./data:/app/data
+      - .:/app
       - ./logs:/app/logs
     depends_on:
       - db
       - redis
-    secrets:
-      - db_password
-      - redis_password
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/nse_trading_db
+      - CELERY_BROKER_URL=redis://redis:6379/0
 
-# ✅ Use Docker secrets for sensitive data
-secrets:
-  db_password:
-    file: ./secrets/db_password.txt
-  redis_password:
-    file: ./secrets/redis_password.txt
-  fyers_api_key:
-    file: ./secrets/fyers_api_key.txt
+  # Celery Flower (Monitoring)
+  flower:
+    build: .
+    command: celery -A config flower --port=5555
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
 
 volumes:
   postgres_data:
-  redis_data:
-
-# ✅ Use custom network
-networks:
-  default:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
