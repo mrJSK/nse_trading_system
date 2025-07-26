@@ -1,8 +1,9 @@
 import os
 import logging
-from time import timezone
+import datetime # Import datetime module
+import pytz # Import pytz for timezone-aware datetime objects
 from celery import Celery
-from celery.schedules import crontab  # ✅ Fixed: Import first
+from celery.schedules import crontab
 from celery.signals import after_setup_logger, worker_ready, worker_shutdown
 from django.conf import settings
 
@@ -185,17 +186,19 @@ def setup_loggers(logger, *args, **kwargs):
 @worker_ready.connect
 def worker_ready_handler(sender, **kwargs):
     """Handle worker startup"""
+    ist = pytz.timezone('Asia/Kolkata')
     logger.info("🚀 NSE Trading System Worker Ready", extra={
         'worker_id': sender.hostname,
-        'timestamp': timezone.now().isoformat()
+        'timestamp': datetime.datetime.now(ist).isoformat() # Corrected usage
     })
 
 @worker_shutdown.connect
 def worker_shutdown_handler(sender, **kwargs):
     """Handle worker shutdown"""
+    ist = pytz.timezone('Asia/Kolkata')
     logger.info("🛑 NSE Trading System Worker Shutdown", extra={
         'worker_id': sender.hostname,
-        'timestamp': timezone.now().isoformat()
+        'timestamp': datetime.datetime.now(ist).isoformat() # Corrected usage
     })
 
 # ✅ Task Retry Configuration

@@ -1,3 +1,8 @@
-from django.shortcuts import render
+from django.http import JsonResponse
 
-# Create your views here.
+def health_check_view(request):
+    """
+    A simple health check endpoint for monitoring.
+    Returns a JSON response indicating the service is healthy.
+    """
+    return JsonResponse({'status': 'healthy'})

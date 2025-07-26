@@ -43,8 +43,15 @@ services:
         condition: service_healthy
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.development
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/nse_trading_db
+      # Explicitly define individual DB environment variables
+      - DB_NAME=nse_trading_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=db # <--- This is the crucial change for the web service
+      - DB_PORT=5432
+      # Also ensure Celery broker/backend URLs correctly point to 'redis'
       - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0 # Added for completeness if not already there
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
       interval: 30s
@@ -63,8 +70,13 @@ services:
       - redis
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.development
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/nse_trading_db
+      - DB_NAME=nse_trading_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=db # Ensure this is also 'db' for all Celery workers
+      - DB_PORT=5432
       - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
 
   # Celery Worker - Analysis
   celery-analysis:
@@ -78,8 +90,13 @@ services:
       - redis
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.development
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/nse_trading_db
+      - DB_NAME=nse_trading_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
       - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
 
   # Celery Worker - Trading
   celery-trading:
@@ -93,8 +110,13 @@ services:
       - redis
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.development
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/nse_trading_db
+      - DB_NAME=nse_trading_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
       - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
 
   # Celery Worker - Events
   celery-events:
@@ -108,8 +130,13 @@ services:
       - redis
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.development
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/nse_trading_db
+      - DB_NAME=nse_trading_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
       - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
 
   # Celery Beat Scheduler
   celery-beat:
@@ -123,8 +150,13 @@ services:
       - redis
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.development
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/nse_trading_db
+      - DB_NAME=nse_trading_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
       - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
 
   # Celery Flower (Monitoring)
   flower:
@@ -135,6 +167,7 @@ services:
     depends_on:
       - redis
     environment:
+      # Flower only needs the broker URL
       - CELERY_BROKER_URL=redis://redis:6379/0
 
 volumes:
