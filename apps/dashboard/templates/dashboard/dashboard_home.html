@@ -1,0 +1,939 @@
+{% extends "base.html" %} {% load static %} {% block extra_css %}
+<link rel="stylesheet" href="{% static 'dashboard/css/dashboard.css' %}" />
+<style>
+  .live-output {
+    background: #1a1a1a;
+    color: #00ff00;
+    font-family: "Courier New", monospace;
+    padding: 1rem;
+    border-radius: 5px;
+    max-height: 400px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .task-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .status-running {
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+  .progress-bar-animated {
+    animation: progress-bar-stripes 1s linear infinite;
+  }
+</style>
+{% endblock %} {% block content %}
+<div class="dashboard-container">
+  <div class="dashboard-header">
+    <div>
+      <h1>NSE Trading System Dashboard</h1>
+      <p class="text-muted">
+        Last updated:
+        <span id="lastUpdate"
+          >{{ system_status.last_update|date:"Y-m-d H:i:s" }}</span
+        >
+      </p>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-primary" onclick="refreshDashboard()">
+        <i class="fas fa-sync-alt"></i> Refresh
+      </button>
+      <button
+        class="btn btn-success"
+        data-bs-toggle="modal"
+        data-bs-target="#taskModal"
+      >
+        <i class="fas fa-play"></i> Execute Task
+      </button>
+    </div>
+  </div>
+
+  {% if error_message %}
+  <div class="alert alert-warning">
+    <i class="fas fa-exclamation-triangle"></i> {{ error_message }}
+  </div>
+  {% endif %}
+
+  <div class="row mb-4">
+    <div class="col-md-3">
+      <div class="metric-card">
+        <div class="metric-icon">
+          <i class="fas fa-chart-line"></i>
+        </div>
+        <div class="metric-content">
+          <h3>₹{{ portfolio_metrics.total_value|floatformat:0 }}</h3>
+          <p>Total Portfolio Value</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="metric-card">
+        <div class="metric-icon">
+          <i class="fas fa-coins"></i>
+        </div>
+        <div class="metric-content">
+          <h3>₹{{ portfolio_metrics.daily_pnl|floatformat:0 }}</h3>
+          <p>Daily P&L</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="metric-card">
+        <div class="metric-icon">
+          <i class="fas fa-wallet"></i>
+        </div>
+        <div class="metric-content">
+          <h3>₹{{ portfolio_metrics.cash_balance|floatformat:0 }}</h3>
+          <p>Cash Balance</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="metric-card">
+        <div class="metric-icon">
+          <i class="fas fa-cogs"></i>
+        </div>
+        <div class="metric-content">
+          <h3>{{ system_status.running_tasks }}</h3>
+          <p>Running Tasks</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card">
+        <div
+          class="card-header d-flex justify-content-between align-items-center"
+        >
+          <h5><i class="fas fa-tasks"></i> Task Execution Monitor</h5>
+          <div>
+            <button
+              class="btn btn-sm btn-outline-primary"
+              onclick="refreshTasks()"
+            >
+              <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+            <button
+              class="btn btn-sm btn-outline-danger"
+              onclick="stopAllTasks()"
+            >
+              <i class="fas fa-stop"></i> Stop All
+            </button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>Task Name</th>
+                  <th>Command</th>
+                  <th>Status</th>
+                  <th>Started</th>
+                  <th>Duration</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="tasksTableBody">
+                {% for task in recent_tasks %}
+                <tr
+                  data-task-id="{{ task.id }}"
+                  class="{% if task.status == 'running' %}status-running{% endif %}"
+                >
+                  <td><strong>{{ task.task_name }}</strong></td>
+                  <td><code>{{ task.command|truncatechars:40 }}</code></td>
+                  <td>
+                    <span
+                      class="badge {% if task.status == 'completed' %}bg-success{% elif task.status == 'failed' %}bg-danger{% elif task.status == 'running' %}bg-warning{% elif task.status == 'stopped' %}bg-secondary{% else %}bg-info{% endif %}"
+                    >
+                      {% if task.status == 'running' %}
+                      <i class="fas fa-spinner fa-spin"></i>
+                      {% endif %} {{ task.status|title }}
+                    </span>
+                  </td>
+                  <td>
+                    <small>{{ task.started_at|date:"M d, H:i:s" }}</small>
+                  </td>
+                  <td>
+                    {% if task.completed_at %}
+                    <small
+                      >{{ task.completed_at|timesince:task.started_at }}</small
+                    >
+                    {% elif task.status == 'running' %}
+                    <small class="text-muted">Running...</small>
+                    {% else %}
+                    <small class="text-muted">-</small>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <div class="task-controls">
+                      <button
+                        class="btn btn-sm btn-outline-primary"
+                        onclick="showLiveOutput({{ task.id }})"
+                        title="View Live Output"
+                      >
+                        <i class="fas fa-eye"></i>
+                      </button>
+                      {% if task.status == 'running' %}
+                      <button
+                        class="btn btn-sm btn-outline-danger"
+                        onclick="stopTask({{ task.id }})"
+                        title="Stop Task"
+                      >
+                        <i class="fas fa-stop"></i>
+                      </button>
+                      {% endif %}
+                      <button
+                        class="btn btn-sm btn-outline-info"
+                        onclick="showTaskDetails({{ task.id }})"
+                        title="Task Details"
+                      >
+                        <i class="fas fa-info"></i>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                {% empty %}
+                <tr>
+                  <td colspan="6" class="text-center text-muted">
+                    No tasks executed yet
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header">
+          <h5><i class="fas fa-building"></i> Scraped Companies Data</h5>
+        </div>
+        <div class="card-body">
+          <div class="row mb-3">
+            <div class="col-md-3">
+              <div class="text-center">
+                <h4 class="text-primary">
+                  {{ companies_data.stats.total_companies }}
+                </h4>
+                <small class="text-muted">Total Companies</small>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-center">
+                <h4 class="text-success">
+                  {{ companies_data.stats.scraped_companies }}
+                </h4>
+                <small class="text-muted">Scraped Companies</small>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-center">
+                <h4 class="text-info">
+                  {{ companies_data.stats.coverage_percentage }}%
+                </h4>
+                <small class="text-muted">Coverage</small>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-center">
+                <h4 class="text-warning">{{ companies_data.stats.avg_pe }}</h4>
+                <small class="text-muted">Avg P/E Ratio</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>Symbol</th>
+                  <th>Company Name</th>
+                  <th>Industry</th>
+                  <th>Market Cap (Cr)</th>
+                  <th>Current Price</th>
+                  <th>P/E Ratio</th>
+                  <th>ROE (%)</th>
+                  <th>Sales Growth (1Y)</th>
+                  <th>Score</th>
+                  <th>Last Scraped</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for company in companies_data.companies %}
+                <tr>
+                  <td><strong>{{ company.symbol }}</strong></td>
+                  <td>{{ company.name|truncatechars:30 }}</td>
+                  <td>{{ company.industry|default:"N/A" }}</td>
+                  <td>
+                    {% if company.market_cap %} ₹{{
+                    company.market_cap|floatformat:0 }} {% else %}
+                    <span class="text-muted">N/A</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if company.current_price %} ₹{{
+                    company.current_price|floatformat:2 }} {% else %}
+                    <span class="text-muted">N/A</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if company.pe_ratio %} {{ company.pe_ratio|floatformat:1
+                    }} {% else %}
+                    <span class="text-muted">N/A</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if company.roe %}
+                    <span
+                      class="{% if company.roe > 15 %}text-success{% elif company.roe > 10 %}text-warning{% else %}text-danger{% endif %}"
+                    >
+                      {{ company.roe|floatformat:1 }}%
+                    </span>
+                    {% else %}
+                    <span class="text-muted">N/A</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if company.sales_growth_1y %}
+                    <span
+                      class="{% if company.sales_growth_1y > 10 %}text-success{% elif company.sales_growth_1y > 0 %}text-warning{% else %}text-danger{% endif %}"
+                    >
+                      {{ company.sales_growth_1y|floatformat:1 }}%
+                    </span>
+                    {% else %}
+                    <span class="text-muted">N/A</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if company.overall_score %}
+                    <span
+                      class="badge {% if company.overall_score >= 75 %}bg-success{% elif company.overall_score >= 50 %}bg-warning{% else %}bg-danger{% endif %}"
+                    >
+                      {{ company.overall_score|floatformat:0 }}
+                    </span>
+                    {% else %}
+                    <span class="text-muted">N/A</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if company.last_scraped %}
+                    <small class="text-muted"
+                      >{{ company.last_scraped|date:"M d, H:i" }}</small
+                    >
+                    {% else %}
+                    <span class="text-muted">Never</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <button
+                      class="btn btn-sm btn-outline-primary"
+                      onclick="viewCompanyDetails('{{ company.symbol }}')"
+                    >
+                      <i class="fas fa-eye"></i>
+                    </button>
+                    {% if company.website %}
+                    <a
+                      href="{{ company.website }}"
+                      target="_blank"
+                      class="btn btn-sm btn-outline-secondary"
+                    >
+                      <i class="fas fa-external-link-alt"></i>
+                    </a>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% empty %}
+                <tr>
+                  <td colspan="11" class="text-center text-muted">
+                    <i class="fas fa-info-circle"></i> No companies data
+                    available.
+                    <button
+                      class="btn btn-sm btn-primary ms-2"
+                      data-bs-toggle="modal"
+                      data-bs-target="#taskModal"
+                    >
+                      Scrape Data Now
+                    </button>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="taskModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Execute Task</h5>
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+        ></button>
+      </div>
+      <form method="post" action="{% url 'dashboard:execute_task' %}">
+        {% csrf_token %}
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Select Task</label>
+            <select
+              name="task_name"
+              id="taskSelect"
+              class="form-select"
+              onchange="updateTaskCommand()"
+              required
+            >
+              <option value="">Choose a task...</option>
+              {% for cmd in available_commands %}
+              <option
+                value="{{ cmd.name }}"
+                data-command="{{ cmd.command }}"
+                data-description="{{ cmd.description }}"
+                data-category="{{ cmd.category }}"
+              >
+                {{ cmd.name }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Command</label>
+            <input
+              type="text"
+              name="command"
+              id="taskCommand"
+              class="form-control"
+              readonly
+            />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Description</label>
+            <div id="taskDescription" class="alert alert-info">
+              Select a task to see its description.
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            data-bs-dismiss="modal"
+          >
+            Cancel
+          </button>
+          <button type="submit" class="btn btn-primary">Execute Task</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="liveOutputModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Live Task Output</h5>
+        <div class="d-flex align-items-center gap-2">
+          <span id="outputStatus" class="badge bg-secondary">Loading...</span>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-primary"
+            onclick="refreshOutput()"
+          >
+            <i class="fas fa-sync-alt"></i>
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-danger"
+            id="stopTaskBtn"
+            onclick="stopCurrentTask()"
+            style="display: none"
+          >
+            <i class="fas fa-stop"></i> Stop
+          </button>
+          <button
+            type="button"
+            class="btn-close"
+            data-bs-dismiss="modal"
+          ></button>
+        </div>
+      </div>
+      <div class="modal-body p-0">
+        <div id="liveOutput" class="live-output">Loading output...</div>
+      </div>
+      <div class="modal-footer">
+        <small class="text-muted me-auto" id="lastOutputUpdate"
+          >Last updated: Never</small
+        >
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="companyModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Company Details</h5>
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+        ></button>
+      </div>
+      <div class="modal-body" id="companyDetails">
+        <div class="text-center">
+          <div class="loading"></div>
+          Loading company details...
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %} {% block extra_js %}
+<script src="{% static 'dashboard/js/dashboard.js' %}"></script>
+<script>
+  let currentTaskId = null;
+  let outputInterval = null;
+  let liveOutputModal = null;
+
+  function updateTaskCommand() {
+    const select = document.getElementById("taskSelect");
+    const selectedOption = select.options[select.selectedIndex];
+    const command = selectedOption.getAttribute("data-command") || "";
+    const description =
+      selectedOption.getAttribute("data-description") ||
+      "Select a task to see its description.";
+    const category = selectedOption.getAttribute("data-category") || "";
+
+    document.getElementById("taskCommand").value = command;
+    document.getElementById(
+      "taskDescription"
+    ).innerHTML = `<strong>${category}:</strong> ${description}`;
+  }
+
+  function refreshDashboard() {
+    window.location.reload();
+  }
+
+  function refreshTasks() {
+    fetch("/dashboard/")
+      .then((response) => response.text())
+      .then((html) => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, "text/html");
+        const newTableBody = doc.querySelector("#tasksTableBody");
+        const currentTableBody = document.querySelector("#tasksTableBody");
+        if (newTableBody && currentTableBody) {
+          currentTableBody.innerHTML = newTableBody.innerHTML;
+        }
+      })
+      .catch((error) => {
+        console.error("Error refreshing tasks:", error);
+      });
+  }
+
+  function showLiveOutput(taskId) {
+    currentTaskId = taskId;
+    liveOutputModal = new bootstrap.Modal(
+      document.getElementById("liveOutputModal")
+    );
+    liveOutputModal.show();
+
+    refreshOutput();
+
+    outputInterval = setInterval(refreshOutput, 2000);
+
+    document
+      .getElementById("liveOutputModal")
+      .addEventListener("hidden.bs.modal", () => {
+        if (outputInterval) {
+          clearInterval(outputInterval);
+          outputInterval = null;
+        }
+        currentTaskId = null;
+      });
+  }
+
+  function refreshOutput() {
+    if (!currentTaskId) return;
+
+    fetch(`/dashboard/api/live-output/${currentTaskId}/`)
+      .then((response) => response.json())
+      .then((data) => {
+        const outputDiv = document.getElementById("liveOutput");
+        const statusSpan = document.getElementById("outputStatus");
+        const stopBtn = document.getElementById("stopTaskBtn");
+        const lastUpdate = document.getElementById("lastOutputUpdate");
+
+        outputDiv.textContent = data.output || "No output yet...";
+        outputDiv.scrollTop = outputDiv.scrollHeight;
+
+        statusSpan.textContent = data.status;
+        statusSpan.className = `badge ${getBadgeClass(data.status)}`;
+
+        if (data.status === "running") {
+          stopBtn.style.display = "inline-block";
+          statusSpan.innerHTML =
+            '<i class="fas fa-spinner fa-spin"></i> ' + data.status;
+        } else {
+          stopBtn.style.display = "none";
+          if (outputInterval) {
+            clearInterval(outputInterval);
+            outputInterval = null;
+          }
+        }
+
+        lastUpdate.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+      })
+      .catch((error) => {
+        console.error("Error fetching output:", error);
+        document.getElementById("liveOutput").textContent =
+          "Error loading output: " + error.message;
+      });
+  }
+
+  function stopTask(taskId) {
+    if (!confirm("Are you sure you want to stop this task?")) return;
+
+    fetch(`/dashboard/api/stop-task/${taskId}/`, {
+      method: "POST",
+      headers: {
+        "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]")
+          .value,
+      },
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.success) {
+          alert("Task stopped successfully");
+          refreshTasks();
+        } else {
+          alert("Failed to stop task: " + data.message);
+        }
+      })
+      .catch((error) => {
+        console.error("Error stopping task:", error);
+        alert("Error stopping task: " + error.message);
+      });
+  }
+
+  function stopCurrentTask() {
+    if (currentTaskId) {
+      stopTask(currentTaskId);
+    }
+  }
+
+  function stopAllTasks() {
+    if (!confirm("Are you sure you want to stop ALL running tasks?")) return;
+
+    const runningTasks = document.querySelectorAll(
+      "[data-task-id] .badge.bg-warning"
+    );
+    runningTasks.forEach((badge) => {
+      const row = badge.closest("[data-task-id]");
+      const taskId = row.dataset.taskId;
+      if (taskId) {
+        stopTask(taskId);
+      }
+    });
+  }
+
+  function showTaskDetails(taskId) {
+    fetch(`/dashboard/task-status/${taskId}/`)
+      .then((response) => response.json())
+      .then((data) => {
+        const modal = document.createElement("div");
+        modal.className = "modal fade";
+        modal.innerHTML = `
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Task Details - ID: ${taskId}</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <p><strong>Status:</strong> <span class="badge ${getBadgeClass(
+                                      data.status
+                                    )}">${data.status}</span></p>
+                                    <p><strong>Started:</strong> ${
+                                      data.started_at
+                                        ? new Date(
+                                            data.started_at
+                                          ).toLocaleString()
+                                        : "N/A"
+                                    }</p>
+                                    <p><strong>Completed:</strong> ${
+                                      data.completed_at
+                                        ? new Date(
+                                            data.completed_at
+                                          ).toLocaleString()
+                                        : "Not completed"
+                                    }</p>
+                                    <p><strong>Can Stop:</strong> ${
+                                      data.can_stop ? "Yes" : "No"
+                                    }</p>
+                                </div>
+                                <div class="col-md-6">
+                                    ${
+                                      data.can_stop
+                                        ? `
+                                        <button class="btn btn-danger btn-sm" onclick="stopTask(${taskId}); bootstrap.Modal.getInstance(this.closest('.modal')).hide();">
+                                            <i class="fas fa-stop"></i> Stop Task
+                                        </button>
+                                    `
+                                        : ""
+                                    }
+                                </div>
+                            </div>
+                            ${
+                              data.output
+                                ? `
+                                <div class="mt-3">
+                                    <strong>Output:</strong>
+                                    <div class="live-output mt-2" style="max-height: 300px;">${data.output}</div>
+                                </div>
+                            `
+                                : ""
+                            }
+                            ${
+                              data.error_log
+                                ? `
+                                <div class="mt-3">
+                                    <strong>Errors:</strong>
+                                    <pre class="bg-danger text-white p-3 rounded" style="max-height: 200px; overflow-y: auto;">${data.error_log}</pre>
+                                </div>
+                            `
+                                : ""
+                            }
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+        document.body.appendChild(modal);
+        const bsModal = new bootstrap.Modal(modal);
+        bsModal.show();
+
+        modal.addEventListener("hidden.bs.modal", () => {
+          document.body.removeChild(modal);
+        });
+      })
+      .catch((error) => {
+        alert("Error loading task details: " + error.message);
+      });
+  }
+
+  function getBadgeClass(status) {
+    switch (status.toLowerCase()) {
+      case "completed":
+        return "bg-success";
+      case "failed":
+        return "bg-danger";
+      case "running":
+        return "bg-warning";
+      case "stopped":
+        return "bg-secondary";
+      default:
+        return "bg-info";
+    }
+  }
+
+  function viewCompanyDetails(symbol) {
+    const modal = new bootstrap.Modal(document.getElementById("companyModal"));
+    const modalBody = document.getElementById("companyDetails");
+
+    modalBody.innerHTML = `
+        <div class="text-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading company details...</p>
+        </div>
+    `;
+
+    modal.show();
+
+    fetch(`/dashboard/api/company/${symbol}/`)
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.error) {
+          modalBody.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+          return;
+        }
+
+        modalBody.innerHTML = generateCompanyDetailsHTML(data);
+      })
+      .catch((error) => {
+        console.error("Error loading company details:", error);
+        modalBody.innerHTML = `<div class="alert alert-danger">Error loading company details: ${error.message}</div>`;
+      });
+  }
+
+  function generateCompanyDetailsHTML(data) {
+    return `
+        <div class="row">
+            <div class="col-md-6">
+                <h6><i class="fas fa-info-circle"></i> Basic Information</h6>
+                <table class="table table-sm">
+                    <tr><td><strong>Symbol:</strong></td><td>${
+                      data.basic_info.symbol
+                    }</td></tr>
+                    <tr><td><strong>Name:</strong></td><td>${
+                      data.basic_info.name
+                    }</td></tr>
+                    <tr><td><strong>Industry:</strong></td><td>${
+                      data.basic_info.industry || "N/A"
+                    }</td></tr>
+                    <tr><td><strong>Website:</strong></td><td>
+                        ${
+                          data.basic_info.website
+                            ? `<a href="${data.basic_info.website}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-external-link-alt"></i> Visit
+                            </a>`
+                            : "N/A"
+                        }
+                    </td></tr>
+                </table>
+                
+                <h6 class="mt-3"><i class="fas fa-chart-bar"></i> Valuation Metrics</h6>
+                <table class="table table-sm">
+                    <tr><td><strong>Market Cap:</strong></td><td>₹${formatNumber(
+                      data.valuation_metrics?.market_cap
+                    )} Cr</td></tr>
+                    <tr><td><strong>Current Price:</strong></td><td>₹${formatNumber(
+                      data.valuation_metrics?.current_price,
+                      2
+                    )}</td></tr>
+                    <tr><td><strong>P/E Ratio:</strong></td><td>${formatNumber(
+                      data.valuation_metrics?.stock_pe,
+                      1
+                    )}</td></tr>
+                    <tr><td><strong>Book Value:</strong></td><td>₹${formatNumber(
+                      data.valuation_metrics?.book_value,
+                      2
+                    )}</td></tr>
+                </table>
+            </div>
+            
+            <div class="col-md-6">
+                <h6><i class="fas fa-coins"></i> Profitability Metrics</h6>
+                <table class="table table-sm">
+                    <tr><td><strong>ROE:</strong></td><td><span class="${getColorClass(
+                      data.profitability_metrics?.roe,
+                      15,
+                      10
+                    )}">${formatNumber(
+      data.profitability_metrics?.roe,
+      1
+    )}%</span></td></tr>
+                    <tr><td><strong>ROCE:</strong></td><td><span class="${getColorClass(
+                      data.profitability_metrics?.roce,
+                      15,
+                      10
+                    )}">${formatNumber(
+      data.profitability_metrics?.roce,
+      1
+    )}%</span></td></tr>
+                </table>
+                
+                <h6 class="mt-3"><i class="fas fa-trending-up"></i> Growth Metrics</h6>
+                <table class="table table-sm">
+                    <tr><td><strong>Sales Growth (1Y):</strong></td><td><span class="${getColorClass(
+                      data.growth_metrics?.sales_growth_1y,
+                      10,
+                      0
+                    )}">${formatNumber(
+      data.growth_metrics?.sales_growth_1y,
+      1
+    )}%</span></td></tr>
+                    <tr><td><strong>Profit Growth (1Y):</strong></td><td><span class="${getColorClass(
+                      data.growth_metrics?.profit_growth_1y,
+                      10,
+                      0
+                    )}">${formatNumber(
+      data.growth_metrics?.profit_growth_1y,
+      1
+    )}%</span></td></tr>
+                </table>
+                
+                <h6 class="mt-3"><i class="fas fa-star"></i> Fundamental Score</h6>
+                <p><strong>Overall Score:</strong> 
+                    <span class="badge ${getScoreBadgeClass(
+                      data.fundamental_scores?.overall_score
+                    )}">
+                        ${formatNumber(
+                          data.fundamental_scores?.overall_score,
+                          0
+                        )}
+                    </span>
+                </p>
+            </div>
+        </div>
+    `;
+  }
+
+  function formatNumber(value, decimals = 0) {
+    if (value === null || value === undefined || isNaN(value)) {
+      return "N/A";
+    }
+    return Number(value).toFixed(decimals);
+  }
+
+  function getColorClass(value, goodThreshold, okThreshold) {
+    if (value === null || value === undefined || isNaN(value)) {
+      return "text-muted";
+    }
+    if (value >= goodThreshold) return "text-success";
+    else if (value >= okThreshold) return "text-warning";
+    else return "text-danger";
+  }
+
+  function getScoreBadgeClass(score) {
+    if (score === null || score === undefined || isNaN(score))
+      return "bg-secondary";
+    if (score >= 75) return "bg-success";
+    else if (score >= 50) return "bg-warning";
+    else return "bg-danger";
+  }
+
+  setInterval(refreshTasks, 10000);
+</script>
+{% endblock %}

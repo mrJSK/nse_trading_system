@@ -12,6 +12,8 @@ urlpatterns = [
     # path('api/', include('apps.core.urls')),
     # path('market-data/', include('apps.market_data_service.urls')),
     path('health/', health_check_view, name='health_check'),
+    path('', include('apps.dashboard.urls')),  # Dashboard as home page
+    # path('dashboard/', include('apps.dashboard.urls')),  # Or specific dashboard path
 ]
 
 # Only include debug_toolbar URLs if DEBUG is True
